@@ -9,7 +9,7 @@ describe("worker app", () => {
 
     expect(response.status).toBe(200);
     expect(html).toContain("bank_demo");
-    expect(html).toContain("third-party demo");
-    expect(html).toContain("Sign in with Lilium");
+    expect(html).toContain("第三方演示银行");
+    expect(html).toContain("使用 Lilium 登录");
   });
 });

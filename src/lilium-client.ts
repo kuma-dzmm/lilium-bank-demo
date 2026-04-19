@@ -42,9 +42,15 @@ export interface UserInfoResponse {
   avatar_url?: string | null;
 }
 
+export interface WalletBalanceResponse {
+  user_id: string;
+  balance: string;
+}
+
 export interface CreatePaymentIntentInput {
   userId: string;
   amount: string;
+  operation?: "charge" | "reserve";
   partnerReferenceId: string;
   returnUrl: string;
   cancelUrl: string;
@@ -57,6 +63,7 @@ export interface CreatePaymentIntentInput {
 export interface CreatePaymentIntentResponse {
   intent_id: string;
   status: string;
+  operation?: string;
   amount?: string;
   user_id?: string;
   checkout_url: string;
@@ -96,6 +103,25 @@ export interface CreatePayoutInstructionResponse {
   created_at: string;
 }
 
+export interface CreateCommitInstructionInput {
+  userId: string;
+  intentId: string;
+  amount: string;
+  partnerReferenceId: string;
+  note?: string;
+}
+
+export interface CreateCommitInstructionResponse {
+  instruction_id: string;
+  status: string;
+  operation: string;
+  account_code: string;
+  amount: string;
+  user_id: string;
+  partner_reference_id?: string;
+  created_at: string;
+}
+
 type FetchImpl = typeof fetch;
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {
@@ -118,7 +144,7 @@ export class LiliumClient {
     url.searchParams.set("response_type", "code");
     url.searchParams.set("client_id", input.clientId);
     url.searchParams.set("redirect_uri", input.redirectUri);
-    url.searchParams.set("scope", "openid profile");
+    url.searchParams.set("scope", "openid profile wallet:read");
     url.searchParams.set("state", input.state);
     url.searchParams.set("nonce", input.nonce);
     return url.toString();
@@ -207,6 +233,19 @@ export class LiliumClient {
     return parseJsonResponse<UserInfoResponse>(response);
   }
 
+  async getWalletBalance(accessToken: string): Promise<WalletBalanceResponse> {
+    const response = await this.fetchImpl(
+      new URL("/api/wallet/balance", this.config.baseUrl).toString(),
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+    );
+
+    return parseJsonResponse<WalletBalanceResponse>(response);
+  }
+
   async createPaymentIntent(
     accessToken: string,
     input: CreatePaymentIntentInput,
@@ -222,7 +261,7 @@ export class LiliumClient {
         },
         body: JSON.stringify({
           user_id: input.userId,
-          operation: "charge",
+          operation: input.operation ?? "charge",
           account_code: input.accountCode,
           amount: input.amount,
           asset_code: "dollars",
@@ -280,5 +319,33 @@ export class LiliumClient {
     );
 
     return parseJsonResponse<CreatePayoutInstructionResponse>(response);
+  }
+
+  async createCommitInstruction(
+    accessToken: string,
+    input: CreateCommitInstructionInput,
+  ): Promise<CreateCommitInstructionResponse> {
+    const response = await this.fetchImpl(
+      new URL("/api/v1/clearing-instructions", this.config.baseUrl).toString(),
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          "Idempotency-Key": input.partnerReferenceId,
+        },
+        body: JSON.stringify({
+          operation: "commit",
+          user_id: input.userId,
+          intent_id: input.intentId,
+          amount: input.amount,
+          asset_code: "dollars",
+          partner_reference_id: input.partnerReferenceId,
+          note: input.note,
+        }),
+      },
+    );
+
+    return parseJsonResponse<CreateCommitInstructionResponse>(response);
   }
 }

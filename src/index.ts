@@ -144,6 +144,54 @@ async function listRegisteredAccounts(
   return (await response.json()) as string[];
 }
 
+async function readUserWalletBalanceWithRefresh(
+  session: UserSession,
+  client: LiliumClient,
+  config: ReturnType<typeof getConfig>,
+): Promise<{
+  balance: string;
+  updatedSession: UserSession | null;
+}> {
+  if (!session.oidcAccessToken) {
+    return {
+      balance: "0.00",
+      updatedSession: null,
+    };
+  }
+
+  try {
+    const balance = await client.getWalletBalance(session.oidcAccessToken);
+    return {
+      balance: balance.balance,
+      updatedSession: null,
+    };
+  } catch (error) {
+    if (
+      !String(error).includes("lilium_http_401") ||
+      !session.oidcRefreshToken
+    ) {
+      throw error;
+    }
+
+    const refreshed = await client.refreshOidcSession({
+      clientId: config.oidcClientId,
+      clientSecret: config.oidcClientSecret,
+      refreshToken: session.oidcRefreshToken,
+    });
+    const balance = await client.getWalletBalance(refreshed.access_token);
+
+    return {
+      balance: balance.balance,
+      updatedSession: {
+        ...session,
+        oidcAccessToken: refreshed.access_token,
+        oidcRefreshToken:
+          refreshed.refresh_token ?? session.oidcRefreshToken,
+      },
+    };
+  }
+}
+
 export async function runDailyInterestAccrual(
   bindings: AppBindings,
   settledThroughDate = new Date().toISOString().slice(0, 10),
@@ -243,11 +291,48 @@ export function createApp(
 
   app.get("/dashboard", async (c) => {
     const session = requireUserSession(c);
+    const config = getConfig(c.env);
     const summary = await fetchAccountSummary(c.env.ACCOUNT_DO, session.userId);
+    const client = new LiliumClient(
+      { baseUrl: config.liliumBaseUrl },
+      fetchImpl,
+    );
+    let userCashResult;
+    try {
+      userCashResult = await readUserWalletBalanceWithRefresh(
+        session,
+        client,
+        config,
+      );
+    } catch (error) {
+      if (String(error).includes("INVALID_REFRESH_TOKEN")) {
+        deleteCookie(c, SESSION_COOKIE_NAME, { path: "/" });
+        return c.redirect("/auth/login", 302);
+      }
+      throw error;
+    }
+    const machineToken = await client.issueMachineToken({
+      clientId: config.oidcClientId,
+      clientSecret: config.oidcClientSecret,
+    });
+    const bankCash = await client.getWalletBalance(machineToken.access_token);
+    if (userCashResult.updatedSession) {
+      setCookie(
+        c,
+        SESSION_COOKIE_NAME,
+        encodeSessionCookie(userCashResult.updatedSession),
+        {
+          httpOnly: true,
+          path: "/",
+        },
+      );
+    }
     return c.html(
       renderDashboard({
         displayName: session.displayName,
         userId: session.userId,
+        userCashBalance: userCashResult.balance,
+        bankCashBalance: bankCash.balance,
         bankBalance: summary.bankBalance,
         lastInterestAccrualDate: summary.lastInterestAccrualDate,
         entries: summary.entries,
@@ -260,6 +345,7 @@ export function createApp(
     const config = getConfig(c.env);
     const form = await c.req.formData();
     const amount = parseAmount(String(form.get("amount") ?? ""));
+    const mode = String(form.get("mode") ?? "charge") === "reserve" ? "reserve" : "charge";
     const client = new LiliumClient(
       { baseUrl: config.liliumBaseUrl },
       fetchImpl,
@@ -271,6 +357,7 @@ export function createApp(
     const created = await client.createPaymentIntent(machineToken.access_token, {
       userId: session.userId,
       amount,
+      operation: mode,
       partnerReferenceId: `deposit:${session.userId}:${Date.now()}`,
       returnUrl: `${config.baseUrl}/deposit/return`,
       cancelUrl: `${config.baseUrl}/dashboard`,
@@ -281,7 +368,7 @@ export function createApp(
     setCookie(
       c,
       DEPOSIT_COOKIE_NAME,
-      encodePendingDepositCookie({ intentId: created.intent_id, amount }),
+      encodePendingDepositCookie({ intentId: created.intent_id, amount, mode }),
       {
         httpOnly: true,
         path: "/",
@@ -314,6 +401,16 @@ export function createApp(
 
     if (!["authorized", "released", "succeeded"].includes(intent.status)) {
       throw new HTTPException(409, { message: "Deposit not finalized on Lilium" });
+    }
+
+    if ((intent.operation ?? pending.mode) === "reserve" && intent.status === "authorized") {
+      await client.createCommitInstruction(machineToken.access_token, {
+        userId: session.userId,
+        intentId: pending.intentId,
+        amount: intent.amount ?? pending.amount,
+        partnerReferenceId: `commit:${pending.intentId}`,
+        note: "莉莉银行锁定后入账",
+      });
     }
 
     await registerAccount(c.env.ACCOUNT_REGISTRY_DO, session.userId);

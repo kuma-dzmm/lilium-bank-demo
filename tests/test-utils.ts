@@ -130,11 +130,15 @@ export function createSessionCookie(overrides: Partial<{
   userId: string;
   displayName: string;
   avatarUrl: string | null;
+  oidcAccessToken: string;
+  oidcRefreshToken: string | null;
 }> = {}) {
   return `${SESSION_COOKIE_NAME}=${encodeSessionCookie({
     userId: overrides.userId ?? "user_123",
     displayName: overrides.displayName ?? "Demo User",
     avatarUrl: overrides.avatarUrl ?? null,
+    oidcAccessToken: overrides.oidcAccessToken,
+    oidcRefreshToken: overrides.oidcRefreshToken ?? null,
   })}`;
 }
 

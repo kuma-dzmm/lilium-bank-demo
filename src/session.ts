@@ -12,6 +12,7 @@ export const DEPOSIT_COOKIE_NAME = "bank_demo_pending_deposit";
 export interface PendingDepositSession {
   intentId: string;
   amount: string;
+  mode?: "charge" | "reserve";
 }
 
 function encodeJsonCookie(value: unknown): string {

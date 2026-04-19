@@ -17,6 +17,7 @@ describe("auth routes", () => {
 
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toContain("/oauth/authorize");
+    expect(response.headers.get("location")).toContain("wallet%3Aread");
     expect(getCookieHeader(response)).toContain("bank_demo_oauth_state=");
   });
 

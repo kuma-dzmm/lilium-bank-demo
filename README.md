@@ -1,5 +1,7 @@
 # bank_demo
 
+Live demo at https://bank.kuma.homes
+
 Third-party demo banking application for the Lilium platform.
 
 This repository is intentionally written from the perspective of an external
