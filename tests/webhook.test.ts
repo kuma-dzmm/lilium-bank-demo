@@ -82,4 +82,40 @@ describe("lilium webhook", () => {
     expect(account.bankBalance).toBe("10.00");
     expect(account.entries[0]?.kind).toBe("deposit_credit");
   });
+
+  it("ignores non payment intent webhook events", async () => {
+    const fetchStub = vi.fn<typeof fetch>();
+    const app = createTestApp(fetchStub);
+    const bindings = createTestBindings();
+    const accountNamespace = bindings.ACCOUNT_DO as TestAccountNamespace;
+    const timestamp = "2026-04-20T04:25:00Z";
+    const rawBody = JSON.stringify({
+      type: "clearing_instruction.executed",
+      data: { id: "ci_123" },
+    });
+
+    const response = await app.request(
+      "http://localhost/webhooks/lilium",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Lilium-Timestamp": timestamp,
+          "X-Lilium-Signature": await signWebhook(
+            "webhook_secret",
+            timestamp,
+            rawBody,
+          ),
+        },
+        body: rawBody,
+      },
+      bindings,
+    );
+    const account = await accountNamespace.__getAccount("user_123");
+
+    expect(response.status).toBe(200);
+    expect(fetchStub).not.toHaveBeenCalled();
+    expect(account.bankBalance).toBe("0.00");
+    expect(account.entries).toHaveLength(0);
+  });
 });

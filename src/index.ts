@@ -485,6 +485,10 @@ export function createApp(
       throw new HTTPException(400, { message: "Missing resource id" });
     }
 
+    if (!body.type.startsWith("payment_intent.")) {
+      return c.json({ ok: true });
+    }
+
     const client = new LiliumClient(
       { baseUrl: config.liliumBaseUrl },
       fetchImpl,
@@ -496,7 +500,6 @@ export function createApp(
     const intent = await client.getPaymentIntent(machineToken.access_token, body.data.id);
 
     if (
-      body.type.startsWith("payment_intent.") &&
       ["authorized", "released", "succeeded"].includes(intent.status) &&
       intent.user_id &&
       intent.amount
