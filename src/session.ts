@@ -15,7 +15,13 @@ export interface PendingDepositSession {
 }
 
 function encodeJsonCookie(value: unknown): string {
-  return btoa(JSON.stringify(value));
+  const json = JSON.stringify(value);
+  const bytes = new TextEncoder().encode(json);
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
 }
 
 function decodeJsonCookie<T>(value: string | undefined): T | null {
@@ -24,7 +30,9 @@ function decodeJsonCookie<T>(value: string | undefined): T | null {
   }
 
   try {
-    return JSON.parse(atob(value)) as T;
+    const binary = atob(value);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes)) as T;
   } catch {
     return null;
   }

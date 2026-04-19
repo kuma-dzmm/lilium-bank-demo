@@ -42,8 +42,8 @@ describe("LiliumClient", () => {
       partnerReferenceId: "deposit_123",
       returnUrl: "https://bank-demo.example/deposit/return",
       cancelUrl: "https://bank-demo.example/deposit/cancel",
-      title: "Bank deposit",
-      summary: "Deposit into bank_demo treasury account",
+      title: "莉莉银行存款",
+      summary: "将资金存入莉莉银行账户",
     });
 
     expect(fetchStub).toHaveBeenCalledWith(
@@ -82,7 +82,7 @@ describe("LiliumClient", () => {
       userId: "user_123",
       amount: "2.50",
       partnerReferenceId: "withdraw:user_123:2.50",
-      note: "bank_demo withdrawal",
+      note: "莉莉银行取款",
     });
 
     expect(fetchStub).toHaveBeenCalledWith(

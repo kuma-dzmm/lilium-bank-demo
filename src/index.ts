@@ -159,7 +159,9 @@ export async function runDailyInterestAccrual(
   );
 }
 
-export function createApp(fetchImpl: typeof fetch = fetch): AppType {
+export function createApp(
+  fetchImpl: typeof fetch = (...args) => fetch(...args),
+): AppType {
   const app = new Hono<{ Bindings: AppBindings; Variables: AppVariables }>();
 
   app.use("*", async (c, next) => {
@@ -272,8 +274,8 @@ export function createApp(fetchImpl: typeof fetch = fetch): AppType {
       partnerReferenceId: `deposit:${session.userId}:${Date.now()}`,
       returnUrl: `${config.baseUrl}/deposit/return`,
       cancelUrl: `${config.baseUrl}/dashboard`,
-      title: "Bank deposit",
-      summary: "Deposit into bank_demo treasury account",
+      title: "莉莉银行存款",
+      summary: "将资金存入莉莉银行账户",
     });
 
     setCookie(
@@ -370,7 +372,6 @@ export function createApp(fetchImpl: typeof fetch = fetch): AppType {
     return c.json({ ok: true });
   };
 
-  app.post("/webhook", handleLiliumWebhook);
   app.post("/webhooks/lilium", handleLiliumWebhook);
 
   app.post("/withdraw", async (c) => {
@@ -398,7 +399,7 @@ export function createApp(fetchImpl: typeof fetch = fetch): AppType {
         userId: session.userId,
         amount,
         partnerReferenceId: `withdraw:${session.userId}:${amount}`,
-        note: "bank_demo withdrawal",
+        note: "莉莉银行取款",
       },
     );
     await mutateAccount(c.env.ACCOUNT_DO, session.userId, "withdraw", {

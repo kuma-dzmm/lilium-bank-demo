@@ -37,7 +37,7 @@ describe("auth routes", () => {
         new Response(
           JSON.stringify({
             sub: "user_123",
-            display_name: "Demo User",
+            display_name: "熊猫用户",
             avatar_url: "https://example.com/avatar.png",
           }),
         ),
