@@ -4,7 +4,6 @@ export interface EnvConfig {
   oidcClientId: string;
   oidcClientSecret: string;
   webhookSecret: string;
-  treasuryBearerToken: string;
 }
 
 export function readConfig(
@@ -16,6 +15,5 @@ export function readConfig(
     oidcClientId: env.LILIUM_CLIENT_ID ?? "",
     oidcClientSecret: env.LILIUM_CLIENT_SECRET ?? "",
     webhookSecret: env.LILIUM_WEBHOOK_SECRET ?? "",
-    treasuryBearerToken: env.TREASURY_BEARER_TOKEN ?? "",
   };
 }

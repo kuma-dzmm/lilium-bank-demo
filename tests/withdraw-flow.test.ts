@@ -34,29 +34,28 @@ describe("withdrawal and interest", () => {
     expect(await response.text()).toContain("Insufficient demo balance");
   });
 
-  it("settles pending interest before a withdrawal", async () => {
+  it("withdraws by clearing payout without settling interest in-request", async () => {
     const fetchStub = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            from_user_id: "treasury_user",
-            to_user_id: "user_123",
-            amount: "0.10",
-            from_balance: "999.90",
-            reference_id: "wt_interest",
-            created_at: "2026-04-19T00:00:00Z",
+            access_token: "machine_token",
+            token_type: "bearer",
+            expires_in: 900,
           }),
         ),
       )
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            from_user_id: "treasury_user",
-            to_user_id: "user_123",
+            instruction_id: "ci_withdraw",
+            status: "executed",
+            operation: "payout",
+            account_code: "partner_123",
             amount: "10.00",
-            from_balance: "989.90",
-            reference_id: "wt_withdraw",
+            user_id: "user_123",
+            partner_reference_id: "withdraw:user_123:10.00",
             created_at: "2026-04-19T00:00:00Z",
           }),
         ),
@@ -86,9 +85,15 @@ describe("withdrawal and interest", () => {
 
     expect(response.status).toBe(302);
     expect(fetchStub).toHaveBeenCalledTimes(2);
-    expect(account.bankBalance).toBe("90.10");
+    expect(fetchStub).toHaveBeenNthCalledWith(
+      2,
+      "https://lilium.kuma.homes/api/v1/clearing-instructions",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+    expect(account.bankBalance).toBe("90.00");
     expect(account.entries.map((entry) => entry.kind)).toEqual([
-      "interest_credit",
       "withdrawal_debit",
     ]);
   });

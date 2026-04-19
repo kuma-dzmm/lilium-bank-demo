@@ -58,15 +58,17 @@ describe("LiliumClient", () => {
     );
   });
 
-  it("posts wallet transfers with treasury bearer auth", async () => {
+  it("posts clearing payout instructions with machine bearer auth", async () => {
     const fetchStub = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          from_user_id: "treasury_user",
-          to_user_id: "user_123",
+          instruction_id: "ci_123",
+          status: "executed",
+          operation: "payout",
+          account_code: "partner_123",
           amount: "2.50",
-          from_balance: "97.50",
-          reference_id: "wt_123",
+          user_id: "user_123",
+          partner_reference_id: "withdraw:user_123:2.50",
           created_at: "2026-04-19T00:00:00Z",
         }),
       ),
@@ -76,18 +78,19 @@ describe("LiliumClient", () => {
       fetchStub as typeof fetch,
     );
 
-    await client.transferFromTreasury("treasury_token", {
-      toUserId: "user_123",
+    await client.createPayoutInstruction("machine_token", {
+      userId: "user_123",
       amount: "2.50",
-      memo: "bank_demo daily interest",
+      partnerReferenceId: "withdraw:user_123:2.50",
+      note: "bank_demo withdrawal",
     });
 
     expect(fetchStub).toHaveBeenCalledWith(
-      "https://lilium.kuma.homes/api/wallet/transfer",
+      "https://lilium.kuma.homes/api/v1/clearing-instructions",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
-          Authorization: "Bearer treasury_token",
+          Authorization: "Bearer machine_token",
         }),
       }),
     );

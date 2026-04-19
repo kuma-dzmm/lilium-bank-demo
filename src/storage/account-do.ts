@@ -85,6 +85,48 @@ export class AccountDurableObject {
       return Response.json(nextState);
     }
 
+    if (url.pathname === "/accrue-interest" && request.method === "POST") {
+      const body = (await request.json()) as {
+        userId: string;
+        settledThroughDate: string;
+      };
+      const current =
+        (await this.state.storage.get<DemoAccountState>("account")) ??
+        createEmptyAccount(body.userId);
+
+      const elapsedDays = Math.max(
+        0,
+        Math.floor(
+          (Date.parse(`${body.settledThroughDate}T00:00:00Z`) -
+            Date.parse(`${current.lastInterestAccrualDate}T00:00:00Z`)) /
+            86_400_000,
+        ),
+      );
+      if (elapsedDays <= 0) {
+        return Response.json(current);
+      }
+
+      const amount = (
+        Number(current.bankBalance) *
+        0.001 *
+        elapsedDays
+      ).toFixed(2);
+      const nextBalance = (
+        Number(current.bankBalance) + Number(amount)
+      ).toFixed(2);
+      const nextState = {
+        ...appendLedgerEntry(current, {
+          kind: "interest_credit",
+          amount,
+          balanceAfter: nextBalance,
+          liliumReferenceId: `interest:${body.userId}:${body.settledThroughDate}`,
+        }),
+        lastInterestAccrualDate: body.settledThroughDate,
+      };
+      await this.state.storage.put("account", nextState);
+      return Response.json(nextState);
+    }
+
     if (url.pathname === "/withdraw" && request.method === "POST") {
       const body = (await request.json()) as {
         userId: string;

@@ -3,4 +3,3 @@ LILIUM_BASE_URL=https://lilium.kuma.homes
 LILIUM_CLIENT_ID=replace_me
 LILIUM_CLIENT_SECRET=replace_me
 LILIUM_WEBHOOK_SECRET=replace_me
-TREASURY_BEARER_TOKEN=replace_me

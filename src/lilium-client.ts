@@ -78,6 +78,24 @@ export interface TransferFromTreasuryResponse {
   created_at: string;
 }
 
+export interface CreatePayoutInstructionInput {
+  userId: string;
+  amount: string;
+  partnerReferenceId: string;
+  note?: string;
+}
+
+export interface CreatePayoutInstructionResponse {
+  instruction_id: string;
+  status: string;
+  operation: string;
+  account_code: string;
+  amount: string;
+  user_id: string;
+  partner_reference_id?: string;
+  created_at: string;
+}
+
 type FetchImpl = typeof fetch;
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {
@@ -237,34 +255,30 @@ export class LiliumClient {
     return parseJsonResponse<CreatePaymentIntentResponse>(response);
   }
 
-  async transferFromTreasury(
+  async createPayoutInstruction(
     accessToken: string,
-    input: TransferFromTreasuryInput,
-  ): Promise<TransferFromTreasuryResponse> {
-    const idempotencyKey = [
-      "treasury",
-      input.toUserId,
-      input.amount,
-      input.memo,
-    ].join(":");
-
+    input: CreatePayoutInstructionInput,
+  ): Promise<CreatePayoutInstructionResponse> {
     const response = await this.fetchImpl(
-      new URL("/api/wallet/transfer", this.config.baseUrl).toString(),
+      new URL("/api/v1/clearing-instructions", this.config.baseUrl).toString(),
       {
         method: "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
-          "Idempotency-Key": idempotencyKey,
+          "Idempotency-Key": input.partnerReferenceId,
         },
         body: JSON.stringify({
-          to_user_id: input.toUserId,
+          operation: "payout",
+          user_id: input.userId,
           amount: input.amount,
-          memo: input.memo,
+          asset_code: "dollars",
+          partner_reference_id: input.partnerReferenceId,
+          note: input.note,
         }),
       },
     );
 
-    return parseJsonResponse<TransferFromTreasuryResponse>(response);
+    return parseJsonResponse<CreatePayoutInstructionResponse>(response);
   }
 }

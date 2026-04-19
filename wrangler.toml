@@ -12,8 +12,18 @@ BASE_URL = "https://bank.kuma.homes"
 LILIUM_BASE_URL = "https://lilium.kuma.homes"
 
 [durable_objects]
-bindings = [{ name = "ACCOUNT_DO", class_name = "AccountDurableObject" }]
+bindings = [
+  { name = "ACCOUNT_DO", class_name = "AccountDurableObject" },
+  { name = "ACCOUNT_REGISTRY_DO", class_name = "AccountRegistryDurableObject" }
+]
 
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["AccountDurableObject"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["AccountRegistryDurableObject"]
+
+[triggers]
+crons = ["0 0 * * *"]

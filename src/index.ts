@@ -1,7 +1,7 @@
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { computeLazyInterest } from "./domain/interest";
 import { readConfig } from "./config";
 import { LiliumClient } from "./lilium-client";
 import {
@@ -14,6 +14,7 @@ import {
   DEPOSIT_COOKIE_NAME,
 } from "./session";
 import { AccountDurableObject } from "./storage/account-do";
+import { AccountRegistryDurableObject } from "./storage/account-registry-do";
 import {
   decodeOAuthState,
   encodeOAuthState,
@@ -24,12 +25,12 @@ import { renderHome } from "./templates/home";
 
 interface AppBindings {
   ACCOUNT_DO?: DurableObjectNamespace;
+  ACCOUNT_REGISTRY_DO?: DurableObjectNamespace;
   BASE_URL?: string;
   LILIUM_BASE_URL?: string;
   LILIUM_CLIENT_ID?: string;
   LILIUM_CLIENT_SECRET?: string;
   LILIUM_WEBHOOK_SECRET?: string;
-  TREASURY_BEARER_TOKEN?: string;
 }
 
 interface AppVariables {
@@ -53,7 +54,6 @@ function getConfig(bindings: AppBindings) {
     LILIUM_CLIENT_ID: bindings.LILIUM_CLIENT_ID,
     LILIUM_CLIENT_SECRET: bindings.LILIUM_CLIENT_SECRET,
     LILIUM_WEBHOOK_SECRET: bindings.LILIUM_WEBHOOK_SECRET,
-    TREASURY_BEARER_TOKEN: bindings.TREASURY_BEARER_TOKEN,
   });
 }
 
@@ -110,6 +110,53 @@ async function mutateAccount(
     body: JSON.stringify(payload),
   });
   return response.json();
+}
+
+async function registerAccount(
+  namespace: DurableObjectNamespace | undefined,
+  userId: string,
+) {
+  if (!namespace) {
+    throw new Error("ACCOUNT_REGISTRY_DO binding is required");
+  }
+
+  const id = namespace.idFromName("registry");
+  const stub = namespace.get(id);
+  await stub.fetch("https://registry.internal/register", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ userId }),
+  });
+}
+
+async function listRegisteredAccounts(
+  namespace: DurableObjectNamespace | undefined,
+): Promise<string[]> {
+  if (!namespace) {
+    return [];
+  }
+
+  const id = namespace.idFromName("registry");
+  const stub = namespace.get(id);
+  const response = await stub.fetch("https://registry.internal/accounts");
+  return (await response.json()) as string[];
+}
+
+export async function runDailyInterestAccrual(
+  bindings: AppBindings,
+  settledThroughDate = new Date().toISOString().slice(0, 10),
+) {
+  const userIds = await listRegisteredAccounts(bindings.ACCOUNT_REGISTRY_DO);
+  await Promise.all(
+    userIds.map((userId) =>
+      mutateAccount(bindings.ACCOUNT_DO, userId, "accrue-interest", {
+        userId,
+        settledThroughDate,
+      }),
+    ),
+  );
 }
 
 export function createApp(fetchImpl: typeof fetch = fetch): AppType {
@@ -267,6 +314,7 @@ export function createApp(fetchImpl: typeof fetch = fetch): AppType {
       throw new HTTPException(409, { message: "Deposit not finalized on Lilium" });
     }
 
+    await registerAccount(c.env.ACCOUNT_REGISTRY_DO, session.userId);
     await mutateAccount(c.env.ACCOUNT_DO, session.userId, "finalize-deposit", {
       userId: session.userId,
       intentId: pending.intentId,
@@ -277,7 +325,9 @@ export function createApp(fetchImpl: typeof fetch = fetch): AppType {
     return c.redirect("/dashboard", 302);
   });
 
-  app.post("/webhooks/lilium", async (c) => {
+  const handleLiliumWebhook = async (
+    c: Context<{ Bindings: AppBindings; Variables: AppVariables }>,
+  ) => {
     const config = getConfig(c.env);
     const providedSecret = c.req.header("x-lilium-webhook-secret");
     if (!config.webhookSecret || providedSecret !== config.webhookSecret) {
@@ -308,6 +358,7 @@ export function createApp(fetchImpl: typeof fetch = fetch): AppType {
       intent.user_id &&
       intent.amount
     ) {
+      await registerAccount(c.env.ACCOUNT_REGISTRY_DO, intent.user_id);
       await mutateAccount(c.env.ACCOUNT_DO, intent.user_id, "finalize-deposit", {
         userId: intent.user_id,
         intentId: intent.intent_id,
@@ -317,7 +368,10 @@ export function createApp(fetchImpl: typeof fetch = fetch): AppType {
     }
 
     return c.json({ ok: true });
-  });
+  };
+
+  app.post("/webhook", handleLiliumWebhook);
+  app.post("/webhooks/lilium", handleLiliumWebhook);
 
   app.post("/withdraw", async (c) => {
     const session = requireUserSession(c);
@@ -325,53 +379,32 @@ export function createApp(fetchImpl: typeof fetch = fetch): AppType {
     const form = await c.req.formData();
     const amount = parseAmount(String(form.get("amount") ?? ""));
     const summary = await fetchAccountSummary(c.env.ACCOUNT_DO, session.userId);
-    const today = new Date().toISOString().slice(0, 10);
-    const pendingInterest = computeLazyInterest({
-      balance: summary.bankBalance,
-      lastInterestAccrualDate: summary.lastInterestAccrualDate,
-      today,
-    });
     const client = new LiliumClient(
       { baseUrl: config.liliumBaseUrl },
       fetchImpl,
     );
 
-    if (Number(pendingInterest.amount) > 0) {
-      const interestTransfer = await client.transferFromTreasury(
-        config.treasuryBearerToken,
-        {
-          toUserId: session.userId,
-          amount: pendingInterest.amount,
-          memo: "bank_demo daily interest",
-        },
-      );
-      await mutateAccount(c.env.ACCOUNT_DO, session.userId, "finalize-interest", {
-        userId: session.userId,
-        settlementKey: `${session.userId}:${today}`,
-        amount: pendingInterest.amount,
-        settledThroughDate: today,
-        liliumReferenceId: interestTransfer.reference_id,
-      });
-    }
-
-    const currentBalance =
-      Number(summary.bankBalance) + Number(pendingInterest.amount);
-    if (currentBalance < Number(amount)) {
+    if (Number(summary.bankBalance) < Number(amount)) {
       throw new HTTPException(422, { message: "Insufficient demo balance" });
     }
 
-    const withdrawalTransfer = await client.transferFromTreasury(
-      config.treasuryBearerToken,
+    const machineToken = await client.issueMachineToken({
+      clientId: config.oidcClientId,
+      clientSecret: config.oidcClientSecret,
+    });
+    const withdrawalTransfer = await client.createPayoutInstruction(
+      machineToken.access_token,
       {
-        toUserId: session.userId,
+        userId: session.userId,
         amount,
-        memo: "bank_demo withdrawal",
+        partnerReferenceId: `withdraw:${session.userId}:${amount}`,
+        note: "bank_demo withdrawal",
       },
     );
     await mutateAccount(c.env.ACCOUNT_DO, session.userId, "withdraw", {
       userId: session.userId,
       amount,
-      liliumReferenceId: withdrawalTransfer.reference_id,
+      liliumReferenceId: withdrawalTransfer.instruction_id,
     });
 
     return c.redirect("/dashboard", 302);
@@ -381,6 +414,15 @@ export function createApp(fetchImpl: typeof fetch = fetch): AppType {
 }
 
 const app = createApp();
+const worker = {
+  fetch: app.fetch,
+  scheduled: async (
+    _controller: ScheduledController,
+    env: AppBindings,
+  ) => {
+    await runDailyInterestAccrual(env);
+  },
+};
 
-export default app;
-export { AccountDurableObject };
+export default worker;
+export { AccountDurableObject, AccountRegistryDurableObject };
