@@ -64,6 +64,7 @@ describe("dashboard balances", () => {
     expect(html).toContain("client token");
     expect(html).toContain("银行内部余额");
     expect(html).toContain("$55.00");
+    expect(html).toContain('name="request_id"');
   });
 
   it("refreshes an expired user token before reading wallet balance", async () => {

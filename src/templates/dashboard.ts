@@ -7,6 +7,8 @@ export function renderDashboard(input: {
   bankCashBalance: string;
   bankBalance: string;
   lastInterestAccrualDate: string;
+  depositRequestId: string;
+  withdrawRequestId: string;
   entries: Array<{ kind: string; amount: string; balanceAfter: string }>;
 }): string {
   const entryList = input.entries
@@ -61,6 +63,7 @@ export function renderDashboard(input: {
                 <article class="card h-100">
                   <div class="card-label">存款</div>
                   <form class="inline-form" method="post" action="/deposit">
+                    <input type="hidden" name="request_id" value="${input.depositRequestId}" />
                     <input type="text" name="amount" value="10.00" />
                     <select
                       name="mode"
@@ -77,6 +80,7 @@ export function renderDashboard(input: {
                 <article class="card h-100">
                   <div class="card-label">取款</div>
                   <form class="inline-form" method="post" action="/withdraw">
+                    <input type="hidden" name="request_id" value="${input.withdrawRequestId}" />
                     <input type="text" name="amount" value="5.00" />
                     <button type="submit" class="secondary">取出</button>
                   </form>

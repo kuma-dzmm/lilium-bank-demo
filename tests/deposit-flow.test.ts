@@ -47,7 +47,7 @@ describe("deposit flow", () => {
           Cookie: createSessionCookie(),
           "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: new URLSearchParams({ amount: "10.00" }),
+        body: new URLSearchParams({ amount: "10.00", request_id: "deposit-request-1" }),
       },
       bindings,
     );
@@ -95,7 +95,11 @@ describe("deposit flow", () => {
           Cookie: createSessionCookie(),
           "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: new URLSearchParams({ amount: "10.00", mode: "reserve" }),
+        body: new URLSearchParams({
+          amount: "10.00",
+          mode: "reserve",
+          request_id: "deposit-request-2",
+        }),
       },
       bindings,
     );
@@ -107,6 +111,13 @@ describe("deposit flow", () => {
       expect.objectContaining({
         method: "POST",
         body: expect.stringContaining('"operation":"reserve"'),
+      }),
+    );
+    expect(fetchStub).toHaveBeenNthCalledWith(
+      2,
+      "https://lilium.kuma.homes/api/v1/payment-intents",
+      expect.objectContaining({
+        body: expect.stringContaining('"partner_reference_id":"deposit:deposit-request-2"'),
       }),
     );
   });

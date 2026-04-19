@@ -25,7 +25,7 @@ describe("withdrawal and interest", () => {
           Cookie: createSessionCookie(),
           "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: new URLSearchParams({ amount: "10.00" }),
+        body: new URLSearchParams({ amount: "10.00", request_id: "withdraw-request-1" }),
       },
       bindings,
     );
@@ -77,7 +77,7 @@ describe("withdrawal and interest", () => {
           Cookie: createSessionCookie(),
           "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: new URLSearchParams({ amount: "10.00" }),
+        body: new URLSearchParams({ amount: "10.00", request_id: "withdraw-request-2" }),
       },
       bindings,
     );
@@ -90,11 +90,117 @@ describe("withdrawal and interest", () => {
       "https://lilium.kuma.homes/api/v1/clearing-instructions",
       expect.objectContaining({
         method: "POST",
+        body: expect.stringContaining('"partner_reference_id":"withdraw:withdraw-request-2"'),
       }),
     );
     expect(account.bankBalance).toBe("90.00");
     expect(account.entries.map((entry) => entry.kind)).toEqual([
       "withdrawal_debit",
     ]);
+  });
+
+  it("uses a fresh partner reference id for each withdrawal attempt", async () => {
+    const fetchStub = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            access_token: "machine_token",
+            token_type: "bearer",
+            expires_in: 900,
+          }),
+        ),
+      );
+    fetchStub
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            access_token: "machine_token",
+            token_type: "bearer",
+            expires_in: 900,
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            instruction_id: "ci_withdraw_1",
+            status: "executed",
+            operation: "payout",
+            account_code: "partner_123",
+            amount: "10.00",
+            user_id: "user_123",
+            partner_reference_id: "withdraw:user_123:1",
+            created_at: "2026-04-20T00:00:00Z",
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            access_token: "machine_token",
+            token_type: "bearer",
+            expires_in: 900,
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            instruction_id: "ci_withdraw_2",
+            status: "executed",
+            operation: "payout",
+            account_code: "partner_123",
+            amount: "10.00",
+            user_id: "user_123",
+            partner_reference_id: "withdraw:user_123:2",
+            created_at: "2026-04-20T00:01:00Z",
+          }),
+        ),
+      );
+
+    const app = createTestApp(fetchStub);
+    const bindings = createTestBindings();
+    const accountNamespace = bindings.ACCOUNT_DO as TestAccountNamespace;
+    await accountNamespace.__setAccount("user_123", {
+      ...createEmptyAccount("user_123"),
+      bankBalance: "100.00",
+    });
+
+    await app.request(
+      "http://localhost/withdraw",
+      {
+        method: "POST",
+        headers: {
+          Cookie: createSessionCookie(),
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ amount: "10.00", request_id: "withdraw-request-3" }),
+      },
+      bindings,
+    );
+
+    await accountNamespace.__setAccount("user_123", {
+      ...createEmptyAccount("user_123"),
+      bankBalance: "100.00",
+    });
+
+    await app.request(
+      "http://localhost/withdraw",
+      {
+        method: "POST",
+        headers: {
+          Cookie: createSessionCookie(),
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ amount: "10.00", request_id: "withdraw-request-4" }),
+      },
+      bindings,
+    );
+
+    const firstBody = JSON.parse(String(fetchStub.mock.calls[1]?.[1]?.body));
+    const secondBody = JSON.parse(String(fetchStub.mock.calls[3]?.[1]?.body));
+
+    expect(firstBody.partner_reference_id).not.toBe(secondBody.partner_reference_id);
   });
 });

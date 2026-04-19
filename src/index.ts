@@ -64,6 +64,17 @@ function parseAmount(amount: string): string {
   return Number(amount).toFixed(2);
 }
 
+function parseRequestId(value: FormDataEntryValue | null): string {
+  const requestId = String(value ?? "").trim();
+  if (!requestId) {
+    throw new HTTPException(400, { message: "Missing request id" });
+  }
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(requestId)) {
+    throw new HTTPException(400, { message: "Invalid request id" });
+  }
+  return requestId;
+}
+
 async function fetchAccountSummary(
   namespace: DurableObjectNamespace | undefined,
   userId: string,
@@ -335,6 +346,8 @@ export function createApp(
         bankCashBalance: bankCash.balance,
         bankBalance: summary.bankBalance,
         lastInterestAccrualDate: summary.lastInterestAccrualDate,
+        depositRequestId: crypto.randomUUID(),
+        withdrawRequestId: crypto.randomUUID(),
         entries: summary.entries,
       }),
     );
@@ -345,6 +358,7 @@ export function createApp(
     const config = getConfig(c.env);
     const form = await c.req.formData();
     const amount = parseAmount(String(form.get("amount") ?? ""));
+    const requestId = parseRequestId(form.get("request_id"));
     const mode = String(form.get("mode") ?? "charge") === "reserve" ? "reserve" : "charge";
     const client = new LiliumClient(
       { baseUrl: config.liliumBaseUrl },
@@ -358,7 +372,7 @@ export function createApp(
       userId: session.userId,
       amount,
       operation: mode,
-      partnerReferenceId: `deposit:${session.userId}:${Date.now()}`,
+      partnerReferenceId: `deposit:${requestId}`,
       returnUrl: `${config.baseUrl}/deposit/return`,
       cancelUrl: `${config.baseUrl}/dashboard`,
       title: "莉莉银行存款",
@@ -476,6 +490,7 @@ export function createApp(
     const config = getConfig(c.env);
     const form = await c.req.formData();
     const amount = parseAmount(String(form.get("amount") ?? ""));
+    const requestId = parseRequestId(form.get("request_id"));
     const summary = await fetchAccountSummary(c.env.ACCOUNT_DO, session.userId);
     const client = new LiliumClient(
       { baseUrl: config.liliumBaseUrl },
@@ -495,7 +510,7 @@ export function createApp(
       {
         userId: session.userId,
         amount,
-        partnerReferenceId: `withdraw:${session.userId}:${amount}`,
+        partnerReferenceId: `withdraw:${requestId}`,
         note: "莉莉银行取款",
       },
     );
