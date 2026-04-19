@@ -43,5 +43,5 @@ Planned capabilities:
 
 ## Limitations
 
-- Webhook verification currently uses a shared secret header check suitable for demo integration, not a production-grade signature scheme
+- Webhook verification uses the current Lilium HMAC signature scheme, but the demo still keeps the rest of the integration deliberately minimal
 - The Worker test suite currently runs against the latest locally supported compatibility runtime, which may lag the calendar date in Cloudflare's platform releases

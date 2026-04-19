@@ -75,6 +75,25 @@ function parseRequestId(value: FormDataEntryValue | null): string {
   return requestId;
 }
 
+async function computeLiliumWebhookSignature(
+  secret: string,
+  timestamp: string,
+  rawBody: string,
+): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const message = new TextEncoder().encode(`${timestamp}.${rawBody}`);
+  const signature = await crypto.subtle.sign("HMAC", key, message);
+  return Array.from(new Uint8Array(signature), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
 async function fetchAccountSummary(
   namespace: DurableObjectNamespace | undefined,
   userId: string,
@@ -442,12 +461,23 @@ export function createApp(
     c: Context<{ Bindings: AppBindings; Variables: AppVariables }>,
   ) => {
     const config = getConfig(c.env);
-    const providedSecret = c.req.header("x-lilium-webhook-secret");
-    if (!config.webhookSecret || providedSecret !== config.webhookSecret) {
-      throw new HTTPException(401, { message: "Invalid webhook secret" });
+    const providedSignature = c.req.header("x-lilium-signature");
+    const timestamp = c.req.header("x-lilium-timestamp");
+    if (!config.webhookSecret || !providedSignature || !timestamp) {
+      throw new HTTPException(401, { message: "Invalid webhook signature" });
     }
 
-    const body = (await c.req.json()) as {
+    const rawBody = await c.req.text();
+    const expectedSignature = await computeLiliumWebhookSignature(
+      config.webhookSecret,
+      timestamp,
+      rawBody,
+    );
+    if (providedSignature !== expectedSignature) {
+      throw new HTTPException(401, { message: "Invalid webhook signature" });
+    }
+
+    const body = JSON.parse(rawBody) as {
       type: string;
       data?: { id?: string };
     };
