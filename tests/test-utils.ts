@@ -13,6 +13,9 @@ function createFakeState(storage: FakeStorage): DurableObjectState {
       put: async (key: string, value: unknown) => {
         storage.set(key, value);
       },
+      deleteAll: async () => {
+        storage.clear();
+      },
     },
   } as DurableObjectState;
 }

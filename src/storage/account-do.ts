@@ -13,6 +13,11 @@ export class AccountDurableObject {
       return Response.json(stored ?? createEmptyAccount(userId));
     }
 
+    if (url.pathname === "/clear" && request.method === "POST") {
+      await this.state.storage.deleteAll();
+      return Response.json({ ok: true });
+    }
+
     if (url.pathname === "/finalize-deposit" && request.method === "POST") {
       const body = (await request.json()) as {
         userId: string;

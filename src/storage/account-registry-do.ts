@@ -10,6 +10,11 @@ export class AccountRegistryDurableObject {
       return Response.json(accountIds);
     }
 
+    if (url.pathname === "/clear" && request.method === "POST") {
+      await this.state.storage.deleteAll();
+      return Response.json({ ok: true });
+    }
+
     if (url.pathname === "/register" && request.method === "POST") {
       const body = (await request.json()) as { userId: string };
       const accountIds =

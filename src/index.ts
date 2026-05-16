@@ -37,6 +37,7 @@ interface AppBindings {
   LILIUM_EXTERNAL_COMMAND_CONFIG_ID?: string;
   LILIUM_EXTERNAL_COMMAND_SECRET?: string;
   LILIUM_WEBHOOK_SECRET?: string;
+  BANK_DEMO_MAINTENANCE_SECRET?: string;
 }
 
 interface AppVariables {
@@ -180,6 +181,59 @@ async function listRegisteredAccounts(
   return (await response.json()) as string[];
 }
 
+async function clearAccount(
+  namespace: DurableObjectNamespace | undefined,
+  userId: string,
+) {
+  if (!namespace) {
+    throw new Error("ACCOUNT_DO binding is required");
+  }
+
+  const id = namespace.idFromName(userId);
+  const stub = namespace.get(id);
+  const response = await stub.fetch("https://account.internal/clear", {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(`account_clear_failed:${response.status}`);
+  }
+}
+
+async function clearAccountRegistry(
+  namespace: DurableObjectNamespace | undefined,
+) {
+  if (!namespace) {
+    throw new Error("ACCOUNT_REGISTRY_DO binding is required");
+  }
+
+  const id = namespace.idFromName("registry");
+  const stub = namespace.get(id);
+  const response = await stub.fetch("https://registry.internal/clear", {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(`registry_clear_failed:${response.status}`);
+  }
+}
+
+function bearerToken(header: string | undefined): string {
+  const prefix = "Bearer ";
+  return header?.startsWith(prefix) ? header.slice(prefix.length) : "";
+}
+
+function timingSafeEqualString(left: string, right: string): boolean {
+  const leftBytes = new TextEncoder().encode(left);
+  const rightBytes = new TextEncoder().encode(right);
+  const maxLength = Math.max(leftBytes.length, rightBytes.length);
+  let diff = leftBytes.length ^ rightBytes.length;
+
+  for (let i = 0; i < maxLength; i += 1) {
+    diff |= (leftBytes[i] ?? 0) ^ (rightBytes[i] ?? 0);
+  }
+
+  return diff === 0;
+}
+
 async function readUserWalletBalanceWithRefresh(
   session: UserSession,
   client: LiliumClient,
@@ -291,6 +345,32 @@ export function createApp(
       "ok",
       `莉莉银行余额：$${summary.bankBalance}`,
     );
+  });
+
+  app.post("/admin/clear-durable-objects", async (c) => {
+    const maintenanceSecret = c.env.BANK_DEMO_MAINTENANCE_SECRET;
+    if (!maintenanceSecret) {
+      return c.json(
+        { error: "BANK_DEMO_MAINTENANCE_SECRET is not configured" },
+        500,
+      );
+    }
+
+    const providedToken = bearerToken(c.req.header("authorization"));
+    if (!timingSafeEqualString(providedToken, maintenanceSecret)) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const accountIds = await listRegisteredAccounts(c.env.ACCOUNT_REGISTRY_DO);
+    await Promise.all(
+      accountIds.map((userId) => clearAccount(c.env.ACCOUNT_DO, userId)),
+    );
+    await clearAccountRegistry(c.env.ACCOUNT_REGISTRY_DO);
+
+    return c.json({
+      clearedAccounts: accountIds,
+      registryCleared: true,
+    });
   });
 
   app.get("/auth/login", (c) => {
