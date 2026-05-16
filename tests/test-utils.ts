@@ -68,7 +68,9 @@ export function createTestAccountNamespace(): TestAccountNamespace {
     },
     async __getAccount(userId: string) {
       const response = await getObject(userId).fetch(
-        new Request(`https://account.internal/summary?user_id=${userId}`),
+        new Request(
+          `https://account.bank-demo.internal/internal/v1/account/summary?user_id=${userId}`,
+        ),
       );
       return (await response.json()) as DemoAccountState;
     },
@@ -97,18 +99,25 @@ export function createTestRegistryNamespace(): TestRegistryNamespace {
       } as DurableObjectStub;
     },
     async __listAccounts() {
-      const response = await object.fetch(new Request("https://registry.internal/accounts"));
+      const response = await object.fetch(
+        new Request(
+          "https://account-registry.bank-demo.internal/internal/v1/account-registry/accounts",
+        ),
+      );
       return (await response.json()) as string[];
     },
     async __registerAccount(userId: string) {
       await object.fetch(
-        new Request("https://registry.internal/register", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
+        new Request(
+          "https://account-registry.bank-demo.internal/internal/v1/account-registry/registrations",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ userId }),
           },
-          body: JSON.stringify({ userId }),
-        }),
+        ),
       );
     },
   } as TestRegistryNamespace;

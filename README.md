@@ -36,9 +36,10 @@ Planned capabilities:
 
 ## Lilium Bot External Command
 
-`POST /bank` implements `lilium.external-command.v1` stateless command handling.
-It validates `Content-Digest` and RFC 9421 HMAC request signatures before reading
-the sender's `AccountDurableObject` balance.
+`POST /api/lilium/external-commands/v1/bank/invoke` implements
+`lilium.external-command.v1` stateless command handling. It validates
+`Content-Digest` and RFC 9421 HMAC request signatures before reading the
+sender's `AccountDurableObject` balance.
 
 Example local bot config:
 
@@ -67,7 +68,7 @@ external_commands:
 
     external:
       mode: stateless
-      endpoint: https://bank.kuma.homes/bank
+      endpoint: https://bank.kuma.homes/api/lilium/external-commands/v1/bank/invoke
       timeout_ms: 30000
       shared_secret: "replace-with-the-same-secret-used-by-worker"
 ```
@@ -80,8 +81,8 @@ external_commands:
 - deposit crediting is idempotent on Lilium payment intent ID
 - interest is accrued internally by a daily Worker cron
 - withdraw uses Lilium clearing `payout`, not direct wallet transfer
-- `/bank` ignores command arguments and only uses `sender.id` from the signed
-  Lilium external command envelope
+- the `/bank` command API ignores command arguments and only uses `sender.id`
+  from the signed Lilium external command envelope
 
 ## Limitations
 

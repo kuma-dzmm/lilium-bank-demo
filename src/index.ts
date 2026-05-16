@@ -46,6 +46,26 @@ interface AppVariables {
 
 type AppType = Hono<{ Bindings: AppBindings; Variables: AppVariables }>;
 
+const EXTERNAL_BANK_COMMAND_INVOKE_PATH =
+  "/api/lilium/external-commands/v1/bank/invoke";
+const MAINTENANCE_DURABLE_OBJECTS_CLEAR_PATH =
+  "/api/internal/v1/maintenance/durable-objects/clear";
+const ACCOUNT_DO_ORIGIN = "https://account.bank-demo.internal";
+const ACCOUNT_REGISTRY_DO_ORIGIN = "https://account-registry.bank-demo.internal";
+const ACCOUNT_DO_PATHS = {
+  summary: "/internal/v1/account/summary",
+  finalizeDeposit: "/internal/v1/account/deposit-finalizations",
+  finalizeInterest: "/internal/v1/account/interest-finalizations",
+  accrueInterest: "/internal/v1/account/interest-accruals",
+  withdraw: "/internal/v1/account/withdrawals",
+  clearStorage: "/internal/v1/account/storage/clear",
+} as const;
+const ACCOUNT_REGISTRY_DO_PATHS = {
+  accounts: "/internal/v1/account-registry/accounts",
+  register: "/internal/v1/account-registry/registrations",
+  clearStorage: "/internal/v1/account-registry/storage/clear",
+} as const;
+
 function requireUserSession(c: { get(key: "userSession"): UserSession | null }): UserSession {
   const session = c.get("userSession");
   if (!session) {
@@ -80,6 +100,18 @@ function parseRequestId(value: FormDataEntryValue | null): string {
     throw new HTTPException(400, { message: "Invalid request id" });
   }
   return requestId;
+}
+
+function internalUrl(
+  origin: string,
+  path: string,
+  searchParams: Record<string, string> = {},
+): string {
+  const url = new URL(path, origin);
+  for (const [key, value] of Object.entries(searchParams)) {
+    url.searchParams.set(key, value);
+  }
+  return url.toString();
 }
 
 async function computeLiliumWebhookSignature(
@@ -117,7 +149,9 @@ async function fetchAccountSummary(
   const id = namespace.idFromName(userId);
   const stub = namespace.get(id);
   const response = await stub.fetch(
-    `https://account.internal/summary?user_id=${encodeURIComponent(userId)}`,
+    internalUrl(ACCOUNT_DO_ORIGIN, ACCOUNT_DO_PATHS.summary, {
+      user_id: userId,
+    }),
   );
   return (await response.json()) as {
     userId: string;
@@ -130,7 +164,7 @@ async function fetchAccountSummary(
 async function mutateAccount(
   namespace: DurableObjectNamespace | undefined,
   userId: string,
-  path: string,
+  path: (typeof ACCOUNT_DO_PATHS)[keyof typeof ACCOUNT_DO_PATHS],
   payload: unknown,
 ) {
   if (!namespace) {
@@ -139,7 +173,7 @@ async function mutateAccount(
 
   const id = namespace.idFromName(userId);
   const stub = namespace.get(id);
-  const response = await stub.fetch(`https://account.internal/${path}`, {
+  const response = await stub.fetch(internalUrl(ACCOUNT_DO_ORIGIN, path), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -159,13 +193,16 @@ async function registerAccount(
 
   const id = namespace.idFromName("registry");
   const stub = namespace.get(id);
-  await stub.fetch("https://registry.internal/register", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
+  await stub.fetch(
+    internalUrl(ACCOUNT_REGISTRY_DO_ORIGIN, ACCOUNT_REGISTRY_DO_PATHS.register),
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ userId }),
     },
-    body: JSON.stringify({ userId }),
-  });
+  );
 }
 
 async function listRegisteredAccounts(
@@ -177,7 +214,9 @@ async function listRegisteredAccounts(
 
   const id = namespace.idFromName("registry");
   const stub = namespace.get(id);
-  const response = await stub.fetch("https://registry.internal/accounts");
+  const response = await stub.fetch(
+    internalUrl(ACCOUNT_REGISTRY_DO_ORIGIN, ACCOUNT_REGISTRY_DO_PATHS.accounts),
+  );
   return (await response.json()) as string[];
 }
 
@@ -191,9 +230,12 @@ async function clearAccount(
 
   const id = namespace.idFromName(userId);
   const stub = namespace.get(id);
-  const response = await stub.fetch("https://account.internal/clear", {
-    method: "POST",
-  });
+  const response = await stub.fetch(
+    internalUrl(ACCOUNT_DO_ORIGIN, ACCOUNT_DO_PATHS.clearStorage),
+    {
+      method: "POST",
+    },
+  );
   if (!response.ok) {
     throw new Error(`account_clear_failed:${response.status}`);
   }
@@ -208,9 +250,15 @@ async function clearAccountRegistry(
 
   const id = namespace.idFromName("registry");
   const stub = namespace.get(id);
-  const response = await stub.fetch("https://registry.internal/clear", {
-    method: "POST",
-  });
+  const response = await stub.fetch(
+    internalUrl(
+      ACCOUNT_REGISTRY_DO_ORIGIN,
+      ACCOUNT_REGISTRY_DO_PATHS.clearStorage,
+    ),
+    {
+      method: "POST",
+    },
+  );
   if (!response.ok) {
     throw new Error(`registry_clear_failed:${response.status}`);
   }
@@ -289,10 +337,15 @@ export async function runDailyInterestAccrual(
   const userIds = await listRegisteredAccounts(bindings.ACCOUNT_REGISTRY_DO);
   await Promise.all(
     userIds.map((userId) =>
-      mutateAccount(bindings.ACCOUNT_DO, userId, "accrue-interest", {
+      mutateAccount(
+        bindings.ACCOUNT_DO,
         userId,
-        settledThroughDate,
-      }),
+        ACCOUNT_DO_PATHS.accrueInterest,
+        {
+          userId,
+          settledThroughDate,
+        },
+      ),
     ),
   );
 }
@@ -309,7 +362,7 @@ export function createApp(
 
   app.get("/", (c) => c.html(renderHome()));
 
-  app.post("/bank", async (c) => {
+  app.post(EXTERNAL_BANK_COMMAND_INVOKE_PATH, async (c) => {
     const sharedSecret = c.env.LILIUM_EXTERNAL_COMMAND_SECRET;
     if (!sharedSecret) {
       return c.json(
@@ -347,7 +400,7 @@ export function createApp(
     );
   });
 
-  app.post("/admin/clear-durable-objects", async (c) => {
+  app.post(MAINTENANCE_DURABLE_OBJECTS_CLEAR_PATH, async (c) => {
     const maintenanceSecret = c.env.BANK_DEMO_MAINTENANCE_SECRET;
     if (!maintenanceSecret) {
       return c.json(
@@ -571,12 +624,17 @@ export function createApp(
     }
 
     await registerAccount(c.env.ACCOUNT_REGISTRY_DO, session.userId);
-    await mutateAccount(c.env.ACCOUNT_DO, session.userId, "finalize-deposit", {
-      userId: session.userId,
-      intentId: pending.intentId,
-      amount: intent.amount ?? pending.amount,
-      liliumReferenceId: intent.intent_id,
-    });
+    await mutateAccount(
+      c.env.ACCOUNT_DO,
+      session.userId,
+      ACCOUNT_DO_PATHS.finalizeDeposit,
+      {
+        userId: session.userId,
+        intentId: pending.intentId,
+        amount: intent.amount ?? pending.amount,
+        liliumReferenceId: intent.intent_id,
+      },
+    );
     deleteCookie(c, DEPOSIT_COOKIE_NAME, { path: "/" });
     return c.redirect("/dashboard", 302);
   });
@@ -629,12 +687,17 @@ export function createApp(
       intent.amount
     ) {
       await registerAccount(c.env.ACCOUNT_REGISTRY_DO, intent.user_id);
-      await mutateAccount(c.env.ACCOUNT_DO, intent.user_id, "finalize-deposit", {
-        userId: intent.user_id,
-        intentId: intent.intent_id,
-        amount: intent.amount,
-        liliumReferenceId: intent.intent_id,
-      });
+      await mutateAccount(
+        c.env.ACCOUNT_DO,
+        intent.user_id,
+        ACCOUNT_DO_PATHS.finalizeDeposit,
+        {
+          userId: intent.user_id,
+          intentId: intent.intent_id,
+          amount: intent.amount,
+          liliumReferenceId: intent.intent_id,
+        },
+      );
     }
 
     return c.json({ ok: true });
@@ -671,11 +734,16 @@ export function createApp(
         note: "莉莉银行取款",
       },
     );
-    await mutateAccount(c.env.ACCOUNT_DO, session.userId, "withdraw", {
-      userId: session.userId,
-      amount,
-      liliumReferenceId: withdrawalTransfer.instruction_id,
-    });
+    await mutateAccount(
+      c.env.ACCOUNT_DO,
+      session.userId,
+      ACCOUNT_DO_PATHS.withdraw,
+      {
+        userId: session.userId,
+        amount,
+        liliumReferenceId: withdrawalTransfer.instruction_id,
+      },
+    );
 
     return c.redirect("/dashboard", 302);
   });

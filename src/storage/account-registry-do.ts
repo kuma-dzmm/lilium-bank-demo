@@ -4,18 +4,27 @@ export class AccountRegistryDurableObject {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
-    if (url.pathname === "/accounts" && request.method === "GET") {
+    if (
+      url.pathname === "/internal/v1/account-registry/accounts" &&
+      request.method === "GET"
+    ) {
       const accountIds =
         (await this.state.storage.get<string[]>("accountIds")) ?? [];
       return Response.json(accountIds);
     }
 
-    if (url.pathname === "/clear" && request.method === "POST") {
+    if (
+      url.pathname === "/internal/v1/account-registry/storage/clear" &&
+      request.method === "POST"
+    ) {
       await this.state.storage.deleteAll();
       return Response.json({ ok: true });
     }
 
-    if (url.pathname === "/register" && request.method === "POST") {
+    if (
+      url.pathname === "/internal/v1/account-registry/registrations" &&
+      request.method === "POST"
+    ) {
       const body = (await request.json()) as { userId: string };
       const accountIds =
         (await this.state.storage.get<string[]>("accountIds")) ?? [];

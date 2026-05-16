@@ -22,12 +22,15 @@ describe("maintenance clear", () => {
     await registry.__registerAccount("user_2");
 
     const response = await app.fetch(
-      new Request("https://bank.kuma.homes/admin/clear-durable-objects", {
-        method: "POST",
-        headers: {
-          Authorization: "Bearer maintenance_secret",
+      new Request(
+        "https://bank.kuma.homes/api/internal/v1/maintenance/durable-objects/clear",
+        {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer maintenance_secret",
+          },
         },
-      }),
+      ),
       bindings,
     );
     const payload = (await response.json()) as {
@@ -50,13 +53,15 @@ describe("maintenance clear", () => {
     });
 
     const response = await app.fetch(
-      new Request("https://bank.kuma.homes/admin/clear-durable-objects", {
-        method: "POST",
-      }),
+      new Request(
+        "https://bank.kuma.homes/api/internal/v1/maintenance/durable-objects/clear",
+        {
+          method: "POST",
+        },
+      ),
       bindings,
     );
 
     expect(response.status).toBe(401);
   });
 });
-

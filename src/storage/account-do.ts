@@ -7,18 +7,27 @@ export class AccountDurableObject {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
-    if (url.pathname === "/summary" && request.method === "GET") {
+    if (
+      url.pathname === "/internal/v1/account/summary" &&
+      request.method === "GET"
+    ) {
       const userId = url.searchParams.get("user_id") ?? "";
       const stored = await this.state.storage.get<DemoAccountState>("account");
       return Response.json(stored ?? createEmptyAccount(userId));
     }
 
-    if (url.pathname === "/clear" && request.method === "POST") {
+    if (
+      url.pathname === "/internal/v1/account/storage/clear" &&
+      request.method === "POST"
+    ) {
       await this.state.storage.deleteAll();
       return Response.json({ ok: true });
     }
 
-    if (url.pathname === "/finalize-deposit" && request.method === "POST") {
+    if (
+      url.pathname === "/internal/v1/account/deposit-finalizations" &&
+      request.method === "POST"
+    ) {
       const body = (await request.json()) as {
         userId: string;
         intentId: string;
@@ -52,7 +61,10 @@ export class AccountDurableObject {
       return Response.json(nextState);
     }
 
-    if (url.pathname === "/finalize-interest" && request.method === "POST") {
+    if (
+      url.pathname === "/internal/v1/account/interest-finalizations" &&
+      request.method === "POST"
+    ) {
       const body = (await request.json()) as {
         userId: string;
         settlementKey: string;
@@ -90,7 +102,10 @@ export class AccountDurableObject {
       return Response.json(nextState);
     }
 
-    if (url.pathname === "/accrue-interest" && request.method === "POST") {
+    if (
+      url.pathname === "/internal/v1/account/interest-accruals" &&
+      request.method === "POST"
+    ) {
       const body = (await request.json()) as {
         userId: string;
         settledThroughDate: string;
@@ -132,7 +147,10 @@ export class AccountDurableObject {
       return Response.json(nextState);
     }
 
-    if (url.pathname === "/withdraw" && request.method === "POST") {
+    if (
+      url.pathname === "/internal/v1/account/withdrawals" &&
+      request.method === "POST"
+    ) {
       const body = (await request.json()) as {
         userId: string;
         amount: string;

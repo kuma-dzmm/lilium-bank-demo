@@ -105,7 +105,7 @@ describe("external /bank command", () => {
 
     const response = await app.fetch(
       await createSignedInvokeRequest(
-        "https://bank.kuma.homes/bank",
+        "https://bank.kuma.homes/api/lilium/external-commands/v1/bank/invoke",
         bankInvokeEnvelope(),
       ),
       bindings,
@@ -138,7 +138,7 @@ describe("external /bank command", () => {
 
     const response = await app.fetch(
       await createSignedInvokeRequest(
-        "https://bank.kuma.homes/bank",
+        "https://bank.kuma.homes/api/lilium/external-commands/v1/bank/invoke",
         bankInvokeEnvelope("cmd_bad_signature"),
         "wrong_secret",
       ),
@@ -160,7 +160,7 @@ describe("external /bank command", () => {
 
     const response = await app.fetch(
       await createSignedInvokeRequest(
-        "https://bank.kuma.homes/bank",
+        "https://bank.kuma.homes/api/lilium/external-commands/v1/bank/invoke",
         envelope,
       ),
       bindings,
