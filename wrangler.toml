@@ -10,6 +10,7 @@ routes = [
 [vars]
 BASE_URL = "https://bank.kuma.homes"
 LILIUM_BASE_URL = "https://lilium.kuma.homes"
+LILIUM_EXTERNAL_COMMAND_CONFIG_ID = "bank"
 
 [durable_objects]
 bindings = [

@@ -3,6 +3,10 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { readConfig } from "./config";
+import {
+  externalCommandResult,
+  readExternalCommandInvoke,
+} from "./external-command";
 import { LiliumClient } from "./lilium-client";
 import {
   decodePendingDepositCookie,
@@ -30,6 +34,8 @@ interface AppBindings {
   LILIUM_BASE_URL?: string;
   LILIUM_CLIENT_ID?: string;
   LILIUM_CLIENT_SECRET?: string;
+  LILIUM_EXTERNAL_COMMAND_CONFIG_ID?: string;
+  LILIUM_EXTERNAL_COMMAND_SECRET?: string;
   LILIUM_WEBHOOK_SECRET?: string;
 }
 
@@ -248,6 +254,44 @@ export function createApp(
   });
 
   app.get("/", (c) => c.html(renderHome()));
+
+  app.post("/bank", async (c) => {
+    const sharedSecret = c.env.LILIUM_EXTERNAL_COMMAND_SECRET;
+    if (!sharedSecret) {
+      return c.json(
+        { error: "LILIUM_EXTERNAL_COMMAND_SECRET is not configured" },
+        500,
+      );
+    }
+
+    const configId = c.env.LILIUM_EXTERNAL_COMMAND_CONFIG_ID ?? "bank";
+    const invokeResult = await readExternalCommandInvoke(
+      c.req.raw,
+      sharedSecret,
+      configId,
+    );
+    if (!invokeResult.ok) {
+      return c.json({ error: invokeResult.message }, invokeResult.status);
+    }
+
+    if (invokeResult.invoke.args.trim()) {
+      return externalCommandResult(
+        invokeResult.invoke.invocationId,
+        "rejected",
+        "/bank 不接受参数，只能查询自己的莉莉银行余额。",
+      );
+    }
+
+    const summary = await fetchAccountSummary(
+      c.env.ACCOUNT_DO,
+      invokeResult.invoke.senderId,
+    );
+    return externalCommandResult(
+      invokeResult.invoke.invocationId,
+      "ok",
+      `莉莉银行余额：$${summary.bankBalance}`,
+    );
+  });
 
   app.get("/auth/login", (c) => {
     const config = getConfig(c.env);
